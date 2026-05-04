@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-500: #6366f1; /* Indigo 500 */
+  --color-brand-600: #4f46e5; /* Indigo 600 */
+  --color-accent-500: #ec4899; /* Pink 500 */
+  --color-accent-600: #db2777; /* Pink 600 */
+}
+
+@layer base {
+  body {
+    @apply bg-neutral-950 text-neutral-50;
+  }
+}

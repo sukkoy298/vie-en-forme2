@@ -5,11 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Vie En Forme | Planes de Entrenamiento",
+  title: "FitLife | Planes de Entrenamiento",
   description: "Encuentra tu plan de entrenamiento ideal para cada día de la semana.",
-  icons: {
-    icon: "/icon.svg",
-  },
 };
 
 export default function RootLayout({

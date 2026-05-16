@@ -19,7 +19,7 @@ export default function Home() {
           Vie En Forme
         </h1>
         <p className="text-xl md:text-2xl text-neutral-400 font-medium max-w-2xl mx-auto">
-          Selecciona tu plan de entrenamiento y transforma tu cuerpo hoy.
+          Selecciona tu plan de entrenamiento con la intensidad que más se adapte a ti.
         </p>
       </motion.div>
 
@@ -42,7 +42,7 @@ export default function Home() {
               Plan para Hombre
             </h2>
             <p className="text-neutral-400 mb-8 group-hover:text-neutral-300 transition-colors">
-              Enfocado en hipertrofia, fuerza en tren superior y desarrollo muscular equilibrado.
+              Principiante, intermedio o avanzado. Elige la intensidad que mejor se adapte a tu nivel.
             </p>
             <div className="flex items-center text-brand-500 font-semibold group-hover:translate-x-2 transition-transform duration-300">
               Ver rutina <ChevronRight className="w-5 h-5 ml-1" />
@@ -68,7 +68,7 @@ export default function Home() {
               Plan para Mujer
             </h2>
             <p className="text-neutral-400 mb-8 group-hover:text-neutral-300 transition-colors">
-              Enfocado en tonificación, glúteos, piernas y un core fuerte y definido.
+              Distintos niveles de intensidad para que entrenes a tu ritmo y logres tus metas.
             </p>
             <div className="flex items-center text-accent-500 font-semibold group-hover:translate-x-2 transition-transform duration-300">
               Ver rutina <ChevronRight className="w-5 h-5 ml-1" />

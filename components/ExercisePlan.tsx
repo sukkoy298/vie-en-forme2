@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw, BarChart3 } from "lucide-react";
 
 export type Exercise = {
   name: string;
@@ -26,30 +26,108 @@ interface ExercisePlanProps {
   plan: DayPlan[];
 }
 
+const STORAGE_KEY = "fitlife-progress";
+
+type WeekData = {
+  completed: string[];
+  actualSets: Record<string, number>;
+};
+
+function getWeekKey(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now);
+  monday.setDate(diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString().split("T")[0];
+}
+
+function getWeekRange(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now);
+  monday.setDate(diff);
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
+  return `${monday.toLocaleDateString("es-ES", opts)} - ${sunday.toLocaleDateString("es-ES", opts)}`;
+}
+
+function loadProgress(): Record<string, WeekData> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveProgress(data: Record<string, WeekData>) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch { /* quota exceeded or private mode */ }
+}
+
 export default function ExercisePlan({ title, subtitle, themeColor, plan }: ExercisePlanProps) {
   const router = useRouter();
-  
-  // State for completed exercises
-  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const weekKey = getWeekKey();
 
-  // Use effect to load from local storage if desired, but for now we just use state
+  const [progress, setProgress] = useState<Record<string, WeekData>>({});
+  const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [actualSets, setActualSets] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const data = loadProgress();
+    setProgress(data);
+    const week = data[weekKey];
+    if (week) {
+      setCompleted(new Set(week.completed));
+      setActualSets(week.actualSets);
+    }
+  }, [weekKey]);
+
+  const persist = useCallback((comp: Set<string>, sets: Record<string, number>) => {
+    setProgress(prev => {
+      const next = { ...prev, [weekKey]: { completed: Array.from(comp), actualSets: sets } };
+      saveProgress(next);
+      return next;
+    });
+  }, [weekKey]);
+
   const toggleExercise = (day: string, exerciseName: string) => {
-    const id = `${day}-${exerciseName}`;
     setCompleted(prev => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      const id = `${day}-${exerciseName}`;
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      persist(next, actualSets);
+      return next;
+    });
+  };
+
+  const handleActualSets = (day: string, exerciseName: string, value: number) => {
+    const id = `${day}-${exerciseName}`;
+    setActualSets(prev => {
+      const next = { ...prev, [id]: value };
+      persist(completed, next);
       return next;
     });
   };
 
   const clearCompleted = () => {
     setCompleted(new Set());
+    setActualSets({});
+    persist(new Set(), {});
   };
-  
+
+  const totalExercises = plan.reduce((acc, d) => acc + (d.isRest ? 0 : d.exercises.length), 0);
+  const completedCount = completed.size;
+  const totalPlannedSets = plan.reduce((acc, d) => acc + (d.isRest ? 0 : d.exercises.reduce((s, e) => s + e.sets, 0)), 0);
+  const totalActualSets = Object.values(actualSets).reduce((acc, v) => acc + (v || 0), 0);
+
   const colorClasses = {
     brand: {
       text: "text-brand-500",
@@ -73,9 +151,7 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
     hidden: { opacity: 0 },
     show: {
       opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
+      transition: { staggerChildren: 0.1 },
     },
   };
 
@@ -86,38 +162,67 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
 
   return (
     <div className="min-h-screen bg-neutral-950 pb-20">
-      {/* Header */}
       <header className={`relative pt-20 pb-12 px-6 overflow-hidden bg-gradient-to-b ${theme.gradient} border-b border-neutral-900`}>
         <div className="max-w-5xl mx-auto">
-          <button 
-            onClick={() => router.push("/")}
+          <button
+            onClick={() => router.back()}
             className="flex items-center text-neutral-400 hover:text-neutral-100 transition-colors mb-8 group"
           >
             <ArrowLeft className="w-5 h-5 mr-2 group-hover:-translate-x-1 transition-transform" />
-            Volver al inicio
+            Volver atrás
           </button>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
             <h1 className="text-4xl md:text-6xl font-bold mb-4 tracking-tight text-white">
               {title}
             </h1>
-            <p className="text-xl text-neutral-400 max-w-2xl">
+            <p className="text-xl text-neutral-400 max-w-2xl mb-6">
               {subtitle}
             </p>
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <div className={`flex items-center px-4 py-2 rounded-full ${theme.bgLight} border border-neutral-800`}>
+                <BarChart3 className={`w-4 h-4 mr-2 ${theme.text}`} />
+                <span className="text-neutral-300">
+                  Semana del <span className="text-neutral-100 font-medium">{getWeekRange()}</span>
+                </span>
+              </div>
+            </div>
           </motion.div>
         </div>
       </header>
 
-      {/* Plan Content */}
       <main className="max-w-5xl mx-auto px-6 mt-12">
-        <motion.div 
+        {/* Progress Summary */}
+        {(completedCount > 0 || totalActualSets > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`mb-8 p-4 rounded-xl ${theme.bgLight} border border-neutral-800`}
+          >
+            <div className="flex flex-wrap items-center gap-6 text-sm">
+              <span className="text-neutral-400">
+                Ejercicios: <span className={`font-semibold ${theme.text}`}>{completedCount}/{totalExercises}</span>
+              </span>
+              <span className="text-neutral-400">
+                Series planificadas: <span className="font-semibold text-neutral-200">{totalPlannedSets}</span>
+              </span>
+              {totalActualSets > 0 && (
+                <span className="text-neutral-400">
+                  Series realizadas: <span className={`font-semibold ${theme.text}`}>{totalActualSets}</span>
+                </span>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        <motion.div
           variants={containerVars}
           initial="hidden"
           animate="show"
           className="space-y-6"
         >
           {plan.map((dayPlan, index) => (
-            <motion.div 
-              key={dayPlan.day} 
+            <motion.div
+              key={dayPlan.day}
               variants={itemVars}
               className={`bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg ${theme.borderHover}`}
             >
@@ -138,21 +243,21 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
                   </div>
                 )}
               </div>
-              
+
               {!dayPlan.isRest && (
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {dayPlan.exercises.map((exercise, i) => {
                       const id = `${dayPlan.day}-${exercise.name}`;
                       const isDone = completed.has(id);
-                      
+                      const actual = actualSets[id];
+
                       return (
-                        <div 
-                          key={i} 
-                          onClick={() => toggleExercise(dayPlan.day, exercise.name)}
-                          className={`cursor-pointer p-4 rounded-xl border flex flex-col transition-all duration-300 ${
-                            isDone 
-                              ? `bg-neutral-900 border-neutral-700 opacity-60 grayscale-[50%]` 
+                        <div
+                          key={i}
+                          className={`p-4 rounded-xl border flex flex-col transition-all duration-300 ${
+                            isDone
+                              ? `bg-neutral-900 border-neutral-700 opacity-60 grayscale-[50%]`
                               : `bg-neutral-950 border-neutral-800/50 hover:border-neutral-700 hover:shadow-md`
                           }`}
                         >
@@ -160,16 +265,41 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
                             <h3 className={`font-semibold leading-tight pr-2 ${isDone ? 'text-neutral-500 line-through' : 'text-neutral-200'}`}>
                               {exercise.name}
                             </h3>
-                            <CheckCircle2 className={`w-6 h-6 shrink-0 transition-all duration-300 ${isDone ? `${theme.text} opacity-100 scale-110` : 'text-neutral-600 opacity-40'}`} />
+                            <button onClick={() => toggleExercise(dayPlan.day, exercise.name)} className="shrink-0">
+                              <CheckCircle2 className={`w-6 h-6 transition-all duration-300 ${isDone ? `${theme.text} opacity-100 scale-110` : 'text-neutral-600 opacity-40 hover:opacity-70'}`} />
+                            </button>
                           </div>
-                          <div className="mt-auto flex items-center gap-3">
-                            <span className={`px-2.5 py-1 rounded-md text-sm font-medium border ${isDone ? 'bg-neutral-800 border-neutral-700 text-neutral-500' : 'bg-neutral-900 border-neutral-800 text-neutral-300'}`}>
-                              {exercise.sets} series
-                            </span>
-                            <span className={`px-2.5 py-1 rounded-md text-sm font-medium border ${isDone ? 'bg-neutral-800 border-neutral-700 text-neutral-500' : 'bg-neutral-900 border-neutral-800 text-neutral-300'}`}>
-                              {exercise.reps} reps
-                            </span>
+
+                          <div className="mt-auto space-y-2">
+                            <div className="flex items-center gap-3">
+                              <span className={`px-2.5 py-1 rounded-md text-sm font-medium border ${isDone ? 'bg-neutral-800 border-neutral-700 text-neutral-500' : 'bg-neutral-900 border-neutral-800 text-neutral-300'}`}>
+                                {exercise.sets} series
+                              </span>
+                              <span className={`px-2.5 py-1 rounded-md text-sm font-medium border ${isDone ? 'bg-neutral-800 border-neutral-700 text-neutral-500' : 'bg-neutral-900 border-neutral-800 text-neutral-300'}`}>
+                                {exercise.reps}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-neutral-500">Realizadas:</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={exercise.sets}
+                                value={actual ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value === "" ? 0 : Math.max(0, Math.min(exercise.sets, parseInt(e.target.value) || 0));
+                                  handleActualSets(dayPlan.day, exercise.name, val);
+                                }}
+                                className={`w-16 px-2 py-1 text-sm rounded-md border bg-neutral-900 text-neutral-200 text-center appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${
+                                  isDone ? 'border-neutral-700 opacity-60' : 'border-neutral-700 hover:border-neutral-500 focus:border-brand-500 focus:outline-none'
+                                }`}
+                                placeholder="0"
+                              />
+                              <span className="text-xs text-neutral-500">/ {exercise.sets}</span>
+                            </div>
                           </div>
+
                           {exercise.notes && (
                             <p className={`mt-3 text-xs italic ${isDone ? 'text-neutral-600' : 'text-neutral-500'}`}>
                               * {exercise.notes}
@@ -184,9 +314,9 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
             </motion.div>
           ))}
         </motion.div>
-        
+
         {completed.size > 0 && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="mt-12 flex justify-center"
@@ -196,7 +326,7 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
               className={`flex items-center px-6 py-3 rounded-full font-semibold transition-all duration-300 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 ${theme.text}`}
             >
               <RotateCcw className="w-5 h-5 mr-2" />
-              Limpiar ejercicios realizados ({completed.size})
+              Limpiar progreso de esta semana ({completedCount})
             </button>
           </motion.div>
         )}

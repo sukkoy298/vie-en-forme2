@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw, BarChart3 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw, BarChart3, Save, Check, Calendar, ChevronDown, ChevronUp } from "lucide-react";
 
 export type Exercise = {
   name: string;
@@ -78,6 +78,9 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
   const [progress, setProgress] = useState<Record<string, WeekData>>({});
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [actualSets, setActualSets] = useState<Record<string, number>>({});
+  const [showSavedFeedback, setShowSavedFeedback] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [expandedHistoryWeek, setExpandedHistoryWeek] = useState<string | null>(null);
 
   useEffect(() => {
     const data = loadProgress();
@@ -117,12 +120,40 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
     });
   };
 
+  const handleSaveProgress = () => {
+    persist(completed, actualSets);
+    setShowSavedFeedback(true);
+    setTimeout(() => setShowSavedFeedback(false), 2000);
+  };
+
   const clearCompleted = () => {
     setCompleted(new Set());
     setActualSets({});
     persist(new Set(), {});
   };
 
+  function groupByDay(items: string[]): [string, string[]][] {
+    const map = new Map<string, string[]>();
+    for (const id of items) {
+      const idx = id.indexOf("-");
+      const day = id.slice(0, idx);
+      const exercise = id.slice(idx + 1);
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(exercise);
+    }
+    return Array.from(map.entries());
+  }
+
+  function formatWeekFromKey(weekKey: string): string {
+    const [y, m, d] = weekKey.split("-").map(Number);
+    const monday = new Date(y, m - 1, d);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "long" };
+    return `${monday.toLocaleDateString("es-ES", opts)} - ${sunday.toLocaleDateString("es-ES", opts)}`;
+  }
+
+  const historyWeeks = Object.keys(progress).filter(k => k !== weekKey).sort().reverse();
   const totalExercises = plan.reduce((acc, d) => acc + (d.isRest ? 0 : d.exercises.length), 0);
   const completedCount = completed.size;
   const totalPlannedSets = plan.reduce((acc, d) => acc + (d.isRest ? 0 : d.exercises.reduce((s, e) => s + e.sets, 0)), 0);
@@ -319,15 +350,122 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mt-12 flex justify-center"
+            className="mt-12 flex flex-col items-center gap-4"
+          >
+            <div className="flex flex-wrap justify-center gap-4">
+              <button
+                onClick={handleSaveProgress}
+                className={`flex items-center px-6 py-3 rounded-full font-semibold transition-all duration-300 ${
+                  showSavedFeedback
+                    ? 'bg-green-600/20 text-green-400 border border-green-600/50'
+                    : 'bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-200'
+                }`}
+              >
+                {showSavedFeedback ? (
+                  <><Check className="w-5 h-5 mr-2" /> ¡Progreso guardado!</>
+                ) : (
+                  <><Save className="w-5 h-5 mr-2" /> Guardar progreso</>
+                )}
+              </button>
+              <button
+                onClick={clearCompleted}
+                className="flex items-center px-6 py-3 rounded-full font-semibold transition-all duration-300 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-400"
+              >
+                <RotateCcw className="w-5 h-5 mr-2" />
+                Limpiar progreso ({completedCount})
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {historyWeeks.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-16"
           >
             <button
-              onClick={clearCompleted}
-              className={`flex items-center px-6 py-3 rounded-full font-semibold transition-all duration-300 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 ${theme.text}`}
+              onClick={() => setShowHistory(!showHistory)}
+              className="flex items-center gap-2 text-neutral-400 hover:text-neutral-200 transition-colors mb-4"
             >
-              <RotateCcw className="w-5 h-5 mr-2" />
-              Limpiar progreso de esta semana ({completedCount})
+              <Calendar className="w-5 h-5" />
+              <span className="font-semibold">Historial de semanas anteriores ({historyWeeks.length})</span>
+              {showHistory ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
+
+            {showHistory && (
+              <div className="space-y-3">
+                {historyWeeks.map((wk) => {
+                  const weekData = progress[wk];
+                  if (!weekData) return null;
+                  const isExpanded = expandedHistoryWeek === wk;
+                  const totalSets = Object.values(weekData.actualSets).reduce((a, b) => a + (b || 0), 0);
+
+                  return (
+                    <div
+                      key={wk}
+                      className="bg-neutral-900/50 border border-neutral-800 rounded-xl overflow-hidden"
+                    >
+                      <button
+                        onClick={() => setExpandedHistoryWeek(isExpanded ? null : wk)}
+                        className="w-full flex items-center justify-between p-4 hover:bg-neutral-800/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${theme.bg}`} />
+                          <span className="text-neutral-200 font-medium text-sm">
+                            {formatWeekFromKey(wk)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-neutral-400">
+                            {weekData.completed.length} ejercicios
+                          </span>
+                          {totalSets > 0 && (
+                            <span className="text-neutral-500">
+                              {totalSets} series
+                            </span>
+                          )}
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-neutral-500" /> : <ChevronDown className="w-4 h-4 text-neutral-500" />}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          className="px-4 pb-4 border-t border-neutral-800"
+                        >
+                          <div className="pt-3 space-y-1">
+                            {weekData.completed.length === 0 ? (
+                              <p className="text-neutral-500 text-sm">Sin ejercicios completados</p>
+                            ) : (
+                              groupByDay(weekData.completed).map(([day, exercises]) => (
+                                <div key={day}>
+                                  <p className="text-neutral-400 text-xs font-semibold uppercase tracking-wider mt-3 mb-1">{day}</p>
+                                  {exercises.map((ex) => (
+                                    <div key={ex} className="flex items-center justify-between text-sm py-1">
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle2 className={`w-3.5 h-3.5 ${theme.text}`} />
+                                        <span className="text-neutral-300">{ex}</span>
+                                      </div>
+                                      {weekData.actualSets[`${day}-${ex}`] !== undefined && (
+                                        <span className="text-neutral-500 text-xs">
+                                          {weekData.actualSets[`${day}-${ex}`]} series
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </motion.div>
         )}
       </main>

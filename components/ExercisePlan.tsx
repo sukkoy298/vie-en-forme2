@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Clock, Flame, RotateCcw, BarChart3, Save, Check, Calendar, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -31,6 +31,7 @@ const STORAGE_KEY = "fitlife-progress";
 type WeekData = {
   completed: string[];
   actualSets: Record<string, number>;
+  dayNotes: Record<string, string>;
 };
 
 function getWeekKey(): string {
@@ -78,9 +79,22 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
   const [progress, setProgress] = useState<Record<string, WeekData>>({});
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [actualSets, setActualSets] = useState<Record<string, number>>({});
+  const [dayNotes, setDayNotes] = useState<Record<string, string>>({});
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedHistoryWeek, setExpandedHistoryWeek] = useState<string | null>(null);
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(
+    () => new Set(plan.filter(d => !d.isRest).map(d => d.day))
+  );
+
+  const toggleDay = (day: string) => {
+    setExpandedDays(prev => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const data = loadProgress();
@@ -89,12 +103,13 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
     if (week) {
       setCompleted(new Set(week.completed));
       setActualSets(week.actualSets);
+      setDayNotes(week.dayNotes ?? {});
     }
   }, [weekKey]);
 
-  const persist = useCallback((comp: Set<string>, sets: Record<string, number>) => {
+  const persist = useCallback((comp: Set<string>, sets: Record<string, number>, notes: Record<string, string>) => {
     setProgress(prev => {
-      const next = { ...prev, [weekKey]: { completed: Array.from(comp), actualSets: sets } };
+      const next = { ...prev, [weekKey]: { completed: Array.from(comp), actualSets: sets, dayNotes: notes } };
       saveProgress(next);
       return next;
     });
@@ -106,7 +121,15 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
       const id = `${day}-${exerciseName}`;
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      persist(next, actualSets);
+      persist(next, actualSets, dayNotes);
+      return next;
+    });
+  };
+
+  const handleDayNote = (day: string, text: string) => {
+    setDayNotes(prev => {
+      const next = { ...prev, [day]: text };
+      persist(completed, actualSets, next);
       return next;
     });
   };
@@ -115,13 +138,13 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
     const id = `${day}-${exerciseName}`;
     setActualSets(prev => {
       const next = { ...prev, [id]: value };
-      persist(completed, next);
+      persist(completed, next, dayNotes);
       return next;
     });
   };
 
   const handleSaveProgress = () => {
-    persist(completed, actualSets);
+    persist(completed, actualSets, dayNotes);
     setShowSavedFeedback(true);
     setTimeout(() => setShowSavedFeedback(false), 2000);
   };
@@ -129,7 +152,8 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
   const clearCompleted = () => {
     setCompleted(new Set());
     setActualSets({});
-    persist(new Set(), {});
+    setDayNotes({});
+    persist(new Set(), {}, {});
   };
 
   function groupByDay(items: string[]): [string, string[]][] {
@@ -257,27 +281,55 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
               variants={itemVars}
               className={`bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg ${theme.borderHover}`}
             >
-              <div className={`p-6 border-b border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-4 ${dayPlan.isRest ? 'bg-neutral-900/50' : theme.bgLight}`}>
+              <div
+                onClick={() => !dayPlan.isRest && toggleDay(dayPlan.day)}
+                className={`p-6 border-b border-neutral-800 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${dayPlan.isRest ? 'bg-neutral-900/50' : theme.bgLight + ' cursor-pointer hover:bg-neutral-800/50'}`}
+              >
                 <div>
-                  <h2 className="text-2xl font-bold text-neutral-100 flex items-center">
+                  <h2 className="text-2xl font-bold text-neutral-100 flex items-center gap-3">
                     {dayPlan.day}
-                    {dayPlan.isRest && <span className="ml-3 text-sm font-medium px-3 py-1 bg-neutral-800 text-neutral-400 rounded-full">Descanso</span>}
+                    {dayPlan.isRest && <span className="text-sm font-medium px-3 py-1 bg-neutral-800 text-neutral-400 rounded-full">Descanso</span>}
+                    {!dayPlan.isRest && (
+                      <span className="text-neutral-500 transition-transform duration-300">
+                        {expandedDays.has(dayPlan.day) ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </span>
+                    )}
                   </h2>
                   <p className={`mt-1 font-medium ${dayPlan.isRest ? 'text-neutral-500' : theme.text}`}>
                     {dayPlan.focus}
                   </p>
                 </div>
                 {!dayPlan.isRest && (
-                  <div className="flex gap-4 text-sm font-medium text-neutral-400">
+                  <div className="flex items-center gap-4 text-sm font-medium text-neutral-400">
                     <div className="flex items-center"><Clock className="w-4 h-4 mr-1" /> ~60 min</div>
                     <div className="flex items-center"><Flame className="w-4 h-4 mr-1" /> Intensa</div>
                   </div>
                 )}
               </div>
 
-              {!dayPlan.isRest && (
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <AnimatePresence initial={false}>
+                {!dayPlan.isRest && expandedDays.has(dayPlan.day) && (
+                  <motion.div
+                    key="exercises"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                    className="overflow-hidden"
+                  >
+                    <div className="p-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="col-span-full">
+                      <div className="flex items-start gap-2 mt-2 mb-4">
+                        <textarea
+                          placeholder="Nota: ¿quieres cambiar algún ejercicio? (ej. reemplazar por...)"
+                          value={dayNotes[dayPlan.day] ?? ""}
+                          onChange={(e) => handleDayNote(dayPlan.day, e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 text-sm rounded-lg border border-neutral-700 bg-neutral-950 text-neutral-300 placeholder-neutral-600 resize-none focus:outline-none focus:border-brand-500 transition-colors"
+                        />
+                      </div>
+                    </div>
                     {dayPlan.exercises.map((exercise, i) => {
                       const id = `${dayPlan.day}-${exercise.name}`;
                       const isDone = completed.has(id);
@@ -339,9 +391,11 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
                         </div>
                       );
                     })}
+                    </div>
                   </div>
-                </div>
-              )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           ))}
         </motion.div>

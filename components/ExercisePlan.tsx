@@ -83,9 +83,7 @@ export default function ExercisePlan({ title, subtitle, themeColor, plan }: Exer
   const [showSavedFeedback, setShowSavedFeedback] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [expandedHistoryWeek, setExpandedHistoryWeek] = useState<string | null>(null);
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(
-    () => new Set(plan.filter(d => !d.isRest).map(d => d.day))
-  );
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
 
   const toggleDay = (day: string) => {
     setExpandedDays(prev => {
